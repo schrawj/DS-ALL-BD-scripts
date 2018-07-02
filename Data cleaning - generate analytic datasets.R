@@ -216,3 +216,29 @@ for (i in mi.codes){
   #  print(nrow(tmp))
   print(table(tmp$all, useNA = 'ifany'))
 }
+
+# Investigate other leukemias in DS kids ----------------------------------
+
+#' What are the specific diagnoses in DS kids with other leukemias?
+#' Would any of these be admissible to roll into the DS-ALL/AML group?
+require(dplyr); require(gmodels); require(xlsx)
+
+load("Z:/Jeremy/GOBACK/Datasets/goback.v20180611.rdata")
+load("Z:/Jeremy/GOBACK/Datasets/Expanded datasets/cancer.codes.v20180227.1.rdata")
+
+leu.other <- filter(goback, down.syndrome == 1 & leu.other == 1)
+
+leu.other.ids <- c(leu.other$studyid)
+leu.other.ids <- filter(cancer.codes, studyid %in% leu.other.ids)
+print(arrange(leu.other.ids, morph31))
+
+tab <- table(leu.other.ids$morph31)
+
+leu.other.freq <- rename(data.frame(morph.codes = names(tab), freq = tab),
+                         freq = freq.Freq)
+leu.other.freq <- leu.other.freq[,c(1,3)]
+
+write.xlsx(leu.other.freq, file = 'Z:/Jeremy/DS-ALL BD project/R outputs/leu.other.morph.codes.in.ds.kids.xlsx',
+           row.names = FALSE)
+
+rm(list = ls()); gc()
