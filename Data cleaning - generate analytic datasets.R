@@ -1,26 +1,45 @@
+# Readme and TODO comments ------------------------------------------------
+
 #'-------------------------------------------------------------------------
 #'-------------------------------------------------------------------------
-#' 2018.06.27.
+#' 2018.07.10.
+#' 
+#' Updated from 2018.06.27.
 #' 
 #' Create and clean datasets for the analysis of cancer risk and survival
 #' as a function of co-occurring birth defects in children diagnosed with 
 #' Down syndrome.
+#' 
+#' Several previously outstanding questions were answered through meetings
+#' with Philip and/or Karen.
+#' 1 We will include other leukemias in the analysis.  We will structure 
+#'   the leukemia variables such that we study "any leukemia" and then
+#'   pull out ALL and AML cases for more specific analyses.
+#' 2 For the (planned, eventual) analysis of specific defects, we will 
+#'   include defects that occur in 5% or more of the DS cases.  This is 
+#'   equivalent to a defect occuring in more than 462 kids with DS.
+#'   Because they are inherently of interest, we will also include:
+#'   Tetralogy of Fallot, ASD, VSD, AVSD, and PDA regardless of whether they
+#'   satisfy this criterion. 
+#' 3 We will include all DS cases as a single unit.  We will not consider
+#'   children with mosaicism or translocation karyotypes separately.
+#' 4 For the few NC children with invalid BPA codes (758.008 or 758.098),
+#'   we will do nothing different.  These children phenotypically resemble
+#'   the other DS cases in terms of comorbid birth defects and the finer
+#'   distinctions based on karyotype are not of interest to us in this 
+#'   analysis.
+#' 5 We will include Michigan children contingent on locating BD codes in 
+#'   MI cancer cases.  As of today, these children are not included in the 
+#'   data.
 #'-------------------------------------------------------------------------
 #'-------------------------------------------------------------------------
 
-#' TODO: Do we want to include other leukemias?  
-#' TODO: Which defects do we want to include in the analysis?  I say those that occur in some non-trivial portion of the kids.
-#' TODO: Get Philip's thoughts on what to do about mosaic cases - these are identified by the 758.040 code in the BPA system.
-#'       Mosaic and complete cases cannot be distinguished from ICD9 codes.  Should we include them?  
-#'       For reference, there are 135 such cases in TX and NC.  This is almost exactly the expected 1%.  
-#'       3 of them eventually developed leukemias.
-#'       A further 4% should have translocation trisomy - where a full or partial copy of 21 is attached to another chromosome.
-#'       They still have 46 chromosomes, but have the symptoms of Down syndrome.  
-#'       I don't know whether their expressivitiy is comparable.
-#' TODO: What do we do about children with 758.008 and 758.098 DS codes?  These are not valid codes as far as I can tell, but these
-#'       kids do have defects that are characteristic of the other DS cases.  I say, treat them as their nearest valid neighbor:
-#'       758.008 becomes 758.000.
-#'       758.098 becomes 758.090.
+#' TODO: Find BD codes for MI cancer cases.
+#' TODO: Consider whether it is appropriate that the reference group of 
+#'       non-DS kids only includes ALL and AML as opposed to any leukemias.
+#'       The DS kids include those diagnosed with any leukemia.
+
+
 
 # Generate the core analytic dataset --------------------------------------
 
@@ -28,41 +47,31 @@ require(dplyr); require(gmodels); require(tictoc)
 
 load('Z:/Jeremy/GOBACK/Datasets/goback.v20180611.rdata')
 
-#' Very few solid tumors were diagnosed.
-#' There are 48 other leukemia cases among children with Down syndrome.
-tmp <- filter(goback, down.syndrome == 1 & cancer == 1 & state != 'AR')
-table(tmp$cancer1)
+#' Extract DS kids and non-DS kids with ALL or AML.  Exclude MI and AR children.
+ds.leuk <- filter(goback, down.syndrome == 1 | all == 1 | aml == 1)
+ds.leuk <- filter(ds.leuk, state %in% c('TX','NC'))
 
-#' Generate a list of DS children with cancers other than ALL or AML.
-#' We will exclude these from the analysis unless Philip says otherwise.
-exclusions <- filter(goback, down.syndrome == 1 & cancer == 1 & all == 0 & aml == 0)
-exclusions <- c(exclusions$studyid)
+#' Exclude DS cases with non-leukemia cancers listed as the first primary.
+exclude.cancer1 <- filter(ds.leuk, down.syndrome == 1 & cancer == 1 & !(cancer1 %in% c('all','aml','leu.other')))
 
-ds.leuk <- filter(filter(goback, down.syndrome == 1 | all == 1 | aml == 1),
-                  state != 'AR')
-ds.leuk <- subset(ds.leuk, !(ds.leuk$studyid %in% exclusions))
+ds.leuk <- filter(ds.leuk, !(studyid %in% exclude.cancer1$studyid))
 
-#' 289 of these children are marked NA for Down syndrome.
+#' 121 of the remaining children are marked NA for Down syndrome.
 #' These children have a cancer diagnosis, do not have Down syndrome, and do have some other defect(s).
 #' For purposes of this analysis, these children should be coded 0 with respect to Down syndrome.
 ds.leuk$down.syndrome <- ifelse(is.na(ds.leuk$down.syndrome), 0, ds.leuk$down.syndrome)
 
-#' Compute a three-level factor variable grouping children into the categories described above.
+#' Compute a three-level factor variable grouping children into the categories described in point 1 in the Readme.
 ds.leuk$ds.leuk <- factor(ifelse(ds.leuk$down.syndrome == 0 & (ds.leuk$aml == 1 | ds.leuk$all == 1), 0,
-                                 ifelse(ds.leuk$down.syndrome == 1 & ds.leuk$all == 0 & ds.leuk$aml == 0, 1,
-                                        ifelse(ds.leuk$down.syndrome == 1 & (ds.leuk$all == 1 | ds.leuk$aml == 1), 2, NA))),
+                                 ifelse(ds.leuk$down.syndrome == 1 & ds.leuk$leu.any == 0, 1,
+                                        ifelse(ds.leuk$down.syndrome == 1 & ds.leuk$leu.any == 1, 2, NA))),
                           levels = c(0:2),
-                          labels = c('Non-DS ALL/AML', 'DS Non-ALL/AML', 'DS ALL/AML'))
+                          labels = c('Non-DS ALL/AML', 'DS Non-Leukemia', 'DS Leukemia'))
 
-#' Check validity of new computed variable against the old ones.
-CrossTable(ds.leuk$down.syndrome, ds.leuk$ds.leuk)
-CrossTable(ds.leuk$leu.any, ds.leuk$ds.leuk)
-CrossTable(ds.leuk$cancer, ds.leuk$ds.leuk)
+#' Replace 99 with NA for missing paternal age values.
+ds.leuk$f.age <- ifelse(ds.leuk$f.age == 99, NA, ds.leuk$f.age)
 
-#' Group membership counts by state.
-CrossTable(ds.leuk$state, ds.leuk$ds.leuk)
-
-save(ds.leuk, file = 'Z:/Jeremy/DS-ALL BD project/Datasets/ds.leuk.v20180627.rdata')
+save(ds.leuk, file = 'Z:/Jeremy/DS-ALL BD project/Datasets/ds.leuk.v20180710.rdata')
 
 rm(list = ls()); gc()
 
@@ -164,6 +173,9 @@ write.xlsx(ds.leuk.defects, file = 'Z:/Jeremy/DS-ALL BD project/R outputs/ds.leu
 
 # Address discrepancy in DS cases by computed variable and codes ----------
 
+#' NOTE: The cause of this issue is now known.  
+#' The numbers are different because a small
+#' number of NC DS cases have codes ending in .xx8 instead of .xx0.
 require(dplyr); require(xlsx)
 
 load("Z:/Jeremy/DS-ALL BD project/Datasets/ds.leuk.v20180627.rdata")
@@ -219,7 +231,7 @@ for (i in mi.codes){
 
 # Investigate other leukemias in DS kids ----------------------------------
 
-#' What are the specific diagnoses in DS kids with other leukemias?
+#' What are the specific cancer diagnoses in DS kids with other leukemias?
 #' Would any of these be admissible to roll into the DS-ALL/AML group?
 require(dplyr); require(gmodels); require(xlsx)
 
@@ -229,9 +241,10 @@ load("Z:/Jeremy/GOBACK/Datasets/Expanded datasets/cancer.codes.v20180227.1.rdata
 leu.other <- filter(goback, down.syndrome == 1 & leu.other == 1)
 
 leu.other.ids <- c(leu.other$studyid)
-leu.other.ids <- filter(cancer.codes, studyid %in% leu.other.ids)
-print(arrange(leu.other.ids, morph31))
+leu.other.ids <- select(filter(cancer.codes, studyid %in% leu.other.ids),
+                        studyid, morph31, site_code1)
 
+#' Generate some aggregate info about the number of times each ICD-O-3 morphology code appears.
 tab <- table(leu.other.ids$morph31)
 
 leu.other.freq <- rename(data.frame(morph.codes = names(tab), freq = tab),
@@ -240,5 +253,25 @@ leu.other.freq <- leu.other.freq[,c(1,3)]
 
 write.xlsx(leu.other.freq, file = 'Z:/Jeremy/DS-ALL BD project/R outputs/leu.other.morph.codes.in.ds.kids.xlsx',
            row.names = FALSE)
+
+#' Karen says the ages at diagnosis can be informative for determining whether some of these other leukemias are 
+#' actually classifiable as ALL or AML.
+#' Generate an individual-level report including the description of the morphology code (which I manually added to the file above, outside of R)
+#' and the age at diagnosis for that child.
+
+morph.descriptions <- read.xlsx(file = 'Z:/Jeremy/DS-ALL BD project/R outputs/leu.other.morph.codes.in.ds.kids.xlsx', sheetIndex = 1,
+                                stringsAsFactors = FALSE)
+morph.descriptions <- rename(morph.descriptions, morph31 = morph.codes)
+morph.descriptions$morph31 <- as.numeric(morph.descriptions$morph31)
+
+leu.other.ids <- left_join(select(leu.other.ids, studyid, morph31), 
+                           select(morph.descriptions, morph31, description), 
+                           by = 'morph31')
+leu.other.ids <- left_join(leu.other.ids,
+                           select(
+                                  filter(goback, down.syndrome == 1 & leu.other == 1), studyid, person.yrs),
+                           by = 'studyid')
+
+write.xlsx(leu.other.ids, file = 'Z:/Jeremy/DS-ALL BD project/R outputs/ds.other.leukemia.cases.xlsx', row.names = FALSE)
 
 rm(list = ls()); gc()
