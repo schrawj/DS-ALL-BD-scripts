@@ -148,15 +148,48 @@ for (i in 22:94){ds.leuk[,i] <- ifelse(is.na(ds.leuk[,i]), 0, ds.leuk[,i])}
 ds.leuk$cns.any.major.anomaly <- ifelse(rowSums(ds.leuk[c(23,24,26,28)]) >= 1, 1, 0)
 ds.leuk$eye.any.major.anomaly <- ifelse(rowSums(ds.leuk[31:32]) >= 1, 1, 0)
 ds.leuk$ear.any.major.anomaly <- ifelse(rowSums(ds.leuk[36]) >= 1, 1, 0)
+ds.leuk$cardiovascular.any.major.anomaly <- ifelse(rowSums(ds.leuk[c(49,55,43,48,40,52,46,47,51,56,41,44,42,57,54)]) >= 1, 1, 0)
+ds.leuk$orofacial.any.major.anomaly <- ifelse(rowSums(ds.leuk[c(62,65)]) >= 1, 1, 0)
+ds.leuk$gi.any.major.anomaly <- ifelse(rowSums(ds.leuk[c(73,69,70,74)]) >= 1, 1, 0)
 
-#'Evidently have no variable for double outlet right ventricle, which I need for this.
-load('Z:/Jeremy/DS-ALL BD project/Datasets/Expanded datasets/ds.leuk.bd.codes.txnc.transpose.v20180711.rdata')
-load('Z:/Jeremy/DS-ALL BD project/Datasets/Expanded datasets/')
+#' Must compute variable for congenital posterior urethral valves and cloacal exstrophy to proceed.
+cpuv.ids.txnc <- filter(ds.leuk.bd.codes.txnc.transpose, `753.600` == 1 | `753.604` == 1 | `753.608` == 1 | `753.609` == 1)
+cpuv.ids.mi <- filter(ds.leuk.bd.codes.mi.transpose, `753.6` == 1)
+cpuv.ids <- c(cpuv.ids.txnc$studyid, cpuv.ids.mi$studyid)
 
+cloaca.ids.txnc <- filter(ds.leuk.bd.codes.txnc.transpose, `751.550` == 1 | `756.790` == 1)
+cloaca.ids.mi <- filter(ds.leuk.bd.codes.mi.transpose, `751.5` == 1)
+cloaca.ids <- c(cloaca.ids.mi$studyid, cloaca.ids.txnc$studyid)
 
-ds.leuk$cardiovascular.any.major.anomaly <- ifelse()
+ds.leuk$congenital.posterior.urethral.vales <- ifelse(ds.leuk$studyid %in% cpuv.ids, 1, 0)
+ds.leuk$cloacal.exstrophy <- ifelse(ds.leuk$studyid %in% cloaca.ids, 1, 0)
 
+ds.leuk$genitourinary.any.major.anomaly <- ifelse(rowSums(ds.leuk[c(78,80,77,166,167)]) >= 1, 1, 0)
+ds.leuk$musculoskeletal.any.major.anomaly <- ifelse(rowSums(ds.leuk[c(84,87,88,90,91,92)] >= 1), 1, 0)
 
+ds.leuk <- select(ds.leuk, -cloacal.exstrophy, -congenital.posterior.urethral.vales, -any.comorbid.defect)
+
+ds.leuk$any.major.comorbid.anomaly <- ifelse(rowSums(ds.leuk[159:166]) >= 1, 1, 0)
+
+save(ds.leuk, file = 'Z:/Jeremy/DS-ALL BD project/Datasets/ds.leuk.v20180712.2.rdata')
+
+for (i in 159:167){
+  print(names(ds.leuk[i]))
+  print(CrossTable(ds.leuk[,i], ds.leuk$state, prop.r = FALSE, prop.chisq = FALSE, prop.t = FALSE))
+}
+
+for (i in c(84,87,88,90,91,92)){
+  print(names(ds.leuk[i]))
+  print(CrossTable(ds.leuk[,i], ds.leuk$state, prop.r = FALSE, prop.chisq = FALSE, prop.t = FALSE))
+}
+
+craniosynostosis.ids <- filter(ds.leuk, down.syndrome == 1 & craniosynostosis == 1)
+craniosynostosis.ids <- c(craniosynostosis.ids$studyid)
+
+craniosynostosis.ids <- filter(ds.leuk.bd.codes.txnc, studyid %in% craniosynostosis.ids)
+craniosynostosis.ids <- filter(ds.leuk.bd.codes.txnc.transpose, studyid %in% craniosynostosis.ids)
+
+cranio.cases <- filter(ds.leuk.bd.codes.txnc.transpose, rowSums(ds.leuk.bd.codes.txnc.transpose[1873:1891], na.rm = TRUE)  >= 1)
 
 # Generate BD  (TX and NC) and cancer (all states) datasets ---------------
 
@@ -213,29 +246,16 @@ require(readstata13); require(dplyr)
 load('Z:/Jeremy/DS-ALL BD project/Datasets/ds.leuk.v20180712.rdata')
 load('Z:/Jeremy/GOBACK/Datasets/Expanded datasets/bd.codes.mi.v20180712.rdata')
 load('Z:/Jeremy/GOBACK/Datasets/Expanded datasets/bd.codes.mi.transpose.v20180712.rdata')
-load("Z:/Jeremy/GOBACK/Datasets/Expanded datasets/bd.codes.mi.transpose.v20180614.rdata")
-load("Z:/Jeremy/GOBACK/Datasets/Expanded datasets/bd.codes.mi.v20180606.rdata")
 
-#' A file from Tiffany that has the BD codes for kids with cancer.
-mi.bd.cancercases <- read.dta13('Z:/Jeremy/DS-ALL BD project/Datasets/Raw datasets/mi_cancer_long_jeremy_071118.dta', convert.underscore = TRUE)
-mi.bd.cancercases <- subset(mi.bd.cancercases, !duplicated(mi.bd.cancercases$studyid))
-mi.bd.cancercases$studyid <- paste0('mi',mi.bd.cancercases$studyid)
-mi.bd.cancercases <- mi.bd.cancercases[ , c(2,109:132)]
-names(mi.bd.cancercases) <- tolower(names(mi.bd.cancercases))
+ds.leuk <- filter(ds.leuk, state == 'MI')
+ds.leuk <- c(ds.leuk$studyid)
 
-bd.codes.mi <- rbind(bd.codes.mi, mi.bd.cancercases)
-bd.codes.mi <- subset(bd.codes.mi, !duplicated(bd.codes.mi$studyid))
-
-save(bd.codes.mi, file = 'Z:/Jeremy/GOBACK/Datasets/Expanded datasets/bd.codes.mi.v20180712.rdata')
-
-tmp <- filter(ds.leuk, state == 'MI')
-tmp <- c(tmp$studyid)
-
-ds.leuk.bd.codes.mi <- filter(bd.codes.mi, studyid %in% tmp)
+#' Results in 3302 of 3307 rows returned.
+ds.leuk.bd.codes.mi <- filter(bd.codes.mi, studyid %in% ds.leuk)
+ds.leuk.bd.codes.mi.transpose <- filter(bd.codes.mi.transpose, studyid %in% ds.leuk)
 
 save(ds.leuk.bd.codes.mi, file = 'Z:/Jeremy/DS-ALL BD project/Datasets/Expanded datasets/ds.leuk.bd.codes.mi.v20180712.rdata')
-
-load('Z:/Jeremy/DS-ALL BD project/Datasets/Expanded datasets/ds.leuk.bd.codes.mi.v20180712.rdata')
+save(ds.leuk.bd.codes.mi.transpose, file = 'Z:/Jeremy/DS-ALL BD project/Datasets/Expanded datasets/ds.leuk.bd.codes.mi.transpose.v20180712.rdata')
 
 # Investigate the spectrum of co-occuring birth defects -------------------
 
@@ -535,3 +555,105 @@ check$ICD9COD1 <- as.character(check$ICD9COD1)
 
 
 
+
+
+# Which defects are captured equally well across states? ------------------
+
+require(xlsx); require(dplyr); require(gmodels); require(stringr)
+
+#' Read in co-occurring defects and filter at ~5% frequency. 
+ds.defects <- read.xlsx('Z:/Jeremy/DS-ALL BD project/R outputs/ds.leuk.comorbid.defect.counts.xlsx', sheetIndex = 1, stringsAsFactors = FALSE,
+                        colIndex = c(1,2,5))
+ds.defects <- filter(ds.defects, freq >= 594)
+
+bpa.defects <- read.xlsx('Z:/Jeremy/GOBACK/Data dictionaries and data definitions/dxmap_current.xlsx', sheetName = 'Current', header = TRUE, 
+                         stringsAsFactors = FALSE, colIndex = 1:2)
+
+load('Z:/Jeremy/DS-ALL BD project/Datasets/Expanded datasets/ds.leuk.bd.codes.txnc.transpose.v20180711.rdata')
+load('Z:/Jeremy/DS-ALL BD project/Datasets/ds.leuk.v20180712.2.rdata')
+
+common.defects <- ds.defects$bpa.code
+
+all.defects <- colnames(ds.leuk.bd.codes.txnc.transpose[2:2362])
+
+#' Only include DS children from TX or NC in this analysis.
+ds.leuk <- filter(ds.leuk, ds.leuk != 'Non-DS ALL/AML' & state %in% c('TX','NC'))
+
+defect.freq <- data.frame(bpa.code = as.character(),
+                          tx.count = as.numeric(),
+                          tx.percent = as.numeric(),
+                          nc.count = as.numeric(),
+                          nc.percent = as.numeric(),
+                          p.chisq = as.numeric(),
+                          p.fisher = as.numeric(),
+                          similar.nc.codes = as.character())
+
+for (i in 1:length(common.defects)){
+  
+  defect <- common.defects[i]
+  
+  #'   tmp <- subset(ds.leuk.bd.codes.txnc.transpose, ds.leuk.bd.codes.txnc.transpose[, defect] == 1)
+  #'   tmp <- c(tmp$studyid)
+  #'   tmp <- filter(ds.leuk, studyid %in% tmp)
+  #'   tmp <- c(tmp$studyid)
+  
+  #'   tmp.ds.leuk <- ds.leuk
+  
+  #'   tmp.ds.leuk[, defect] <- ifelse(tmp.ds.leuk$studyid %in% tmp, 1, 0)
+  
+  #'   tab <- CrossTable(tmp.ds.leuk[, defect], tmp.ds.leuk$state, chisq = TRUE, fisher = TRUE)
+  
+  pattern <- substr(defect, 1, 6)
+  
+  possible.nc.synonyms <- which(substr(all.defects, 1, 6) == pattern) + 1
+  possible.nc.synonyms <- names(ds.leuk.bd.codes.txnc.transpose[possible.nc.synonyms])
+  possible.nc.synonyms <- subset(possible.nc.synonyms, !(possible.nc.synonyms %in% bpa.defects$BPA_number))
+  
+  #' TODO: Figure out how to concatenate all NC codes into a single column.
+  #'   new.defect <- data.frame(bpa.code = defect,
+  #'                            tx.freq = tab$t[1,2],
+  #'                            nc.freq = tab$t[1,1],
+  #'                            similar.nc.codes = c(possible.nc.synonyms),
+  #'                            p.chisq = tab$chisq$p.value,
+  #'                            p.fisher = tab$fisher.gt$p.value)  
+  
+  #' Another thought I had: generate a vector of the code plus all likely nc synonyms.
+  #' Select those columns from the transposed BD data frame.
+  #' Filter rows with rowSums >= 1 (i.e., tagged with at least one of the codes).
+  #' Extract studyid as a character vector.
+  #' Filter ds.leuk for these ids, then creata table for state and record frequencies for this.
+  #' Should capture NC codes better.
+  
+  code.plus.synonyms <- c(defect, possible.nc.synonyms)
+  
+  tmp.transpose <- ds.leuk.bd.codes.txnc.transpose[, c('studyid',code.plus.synonyms)]
+  for (i in 2:length(names(tmp.transpose))){
+    tmp.transpose[,i ] <- ifelse(is.na(tmp.transpose[,i]), 0, tmp.transpose[,i])
+  }
+  tmp.transpose$has.code <- ifelse(rowSums(tmp.transpose[2:length(names(tmp.transpose))]) >= 1, 1, 0)
+  #tmp.transpose <- filter(tmp.transpose, has.code == 1)
+  
+  tmp.transpose$state <- substr(tmp.transpose$studyid, 1, 2)
+  
+  #tmp.ds.leuk <- filter(ds.leuk, studyid %in% tmp.transpose$studyid)
+  
+  tab <- CrossTable(tmp.transpose$state, tmp.transpose$has.code, chisq = TRUE, fisher = TRUE)
+  
+  new.defect <- data.frame(bpa.code = defect,
+                           tx.count = tab$t[2,2],
+                           tx.percent = (tab$t[2,2]/7766)*100,
+                           nc.count = tab$t[1,2],
+                           nc.percent = (tab$t[1,2]/1479)*100, 
+                           p.chisq = tab$chisq$p.value,
+                           p.fisher = tab$fisher.gt$p.value,
+                           similar.nc.codes = paste(code.plus.synonyms, collapse = ", "))    
+  
+  defect.freq <- rbind(defect.freq, new.defect)
+  
+
+  
+
+}
+
+#' TODO: Bind in BPA names.
+#' TODO: Compute percentage of affected children in each state.
