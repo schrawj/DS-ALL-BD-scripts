@@ -556,15 +556,13 @@ check$ICD9COD1 <- as.character(check$ICD9COD1)
 
 
 
-
 # Which defects are captured equally well across states? ------------------
 
 require(xlsx); require(dplyr); require(gmodels); require(stringr)
 
-#' Read in co-occurring defects and filter at ~5% frequency. 
+#' Read in co-occurring defects. 
 ds.defects <- read.xlsx('Z:/Jeremy/DS-ALL BD project/R outputs/ds.leuk.comorbid.defect.counts.xlsx', sheetIndex = 1, stringsAsFactors = FALSE,
                         colIndex = c(1,2,5))
-ds.defects <- filter(ds.defects, freq >= 594)
 
 bpa.defects <- read.xlsx('Z:/Jeremy/GOBACK/Data dictionaries and data definitions/dxmap_current.xlsx', sheetName = 'Current', header = TRUE, 
                          stringsAsFactors = FALSE, colIndex = 1:2)
@@ -586,59 +584,38 @@ defect.freq <- data.frame(bpa.code = as.character(),
                           nc.percent = as.numeric(),
                           p.chisq = as.numeric(),
                           p.fisher = as.numeric(),
-                          similar.nc.codes = as.character())
+                          codes.used.to.dx = as.character())
 
 for (i in 1:length(common.defects)){
   
   defect <- common.defects[i]
   
-  #'   tmp <- subset(ds.leuk.bd.codes.txnc.transpose, ds.leuk.bd.codes.txnc.transpose[, defect] == 1)
-  #'   tmp <- c(tmp$studyid)
-  #'   tmp <- filter(ds.leuk, studyid %in% tmp)
-  #'   tmp <- c(tmp$studyid)
-  
-  #'   tmp.ds.leuk <- ds.leuk
-  
-  #'   tmp.ds.leuk[, defect] <- ifelse(tmp.ds.leuk$studyid %in% tmp, 1, 0)
-  
-  #'   tab <- CrossTable(tmp.ds.leuk[, defect], tmp.ds.leuk$state, chisq = TRUE, fisher = TRUE)
-  
   pattern <- substr(defect, 1, 6)
   
+  #' Returns integers mapping to indices of the columns in the transposed BD data frame that match the first five digits of the index BPA code.
+  #' Then fetches the names of those columns and keeps the ones that are not valid codes.
+  #' The idea being that if the first five digits match but the code is not listed in the TX DHHS codes, it is 
+  #' one of these odd NC codes that is probably a synonym for the index BPA code.
   possible.nc.synonyms <- which(substr(all.defects, 1, 6) == pattern) + 1
   possible.nc.synonyms <- names(ds.leuk.bd.codes.txnc.transpose[possible.nc.synonyms])
   possible.nc.synonyms <- subset(possible.nc.synonyms, !(possible.nc.synonyms %in% bpa.defects$BPA_number))
   
-  #' TODO: Figure out how to concatenate all NC codes into a single column.
-  #'   new.defect <- data.frame(bpa.code = defect,
-  #'                            tx.freq = tab$t[1,2],
-  #'                            nc.freq = tab$t[1,1],
-  #'                            similar.nc.codes = c(possible.nc.synonyms),
-  #'                            p.chisq = tab$chisq$p.value,
-  #'                            p.fisher = tab$fisher.gt$p.value)  
-  
-  #' Another thought I had: generate a vector of the code plus all likely nc synonyms.
-  #' Select those columns from the transposed BD data frame.
-  #' Filter rows with rowSums >= 1 (i.e., tagged with at least one of the codes).
-  #' Extract studyid as a character vector.
-  #' Filter ds.leuk for these ids, then creata table for state and record frequencies for this.
-  #' Should capture NC codes better.
-  
+  #' A list of the code plus all likely NC synonyms.
   code.plus.synonyms <- c(defect, possible.nc.synonyms)
   
+  #' Get those columns.  Set NA values to 0.  Compute a dummy variable to flag rows where at least one code diagnosed.
   tmp.transpose <- ds.leuk.bd.codes.txnc.transpose[, c('studyid',code.plus.synonyms)]
   for (i in 2:length(names(tmp.transpose))){
     tmp.transpose[,i ] <- ifelse(is.na(tmp.transpose[,i]), 0, tmp.transpose[,i])
   }
   tmp.transpose$has.code <- ifelse(rowSums(tmp.transpose[2:length(names(tmp.transpose))]) >= 1, 1, 0)
-  #tmp.transpose <- filter(tmp.transpose, has.code == 1)
   
+  #' Reconstitute a variable for state; compute n and percent of DS cases in each state with the index code or a synonym.
   tmp.transpose$state <- substr(tmp.transpose$studyid, 1, 2)
-  
-  #tmp.ds.leuk <- filter(ds.leuk, studyid %in% tmp.transpose$studyid)
   
   tab <- CrossTable(tmp.transpose$state, tmp.transpose$has.code, chisq = TRUE, fisher = TRUE)
   
+  #' Save output, including a list of the additional codes considered to indicate the diagnosis.
   new.defect <- data.frame(bpa.code = defect,
                            tx.count = tab$t[2,2],
                            tx.percent = (tab$t[2,2]/7766)*100,
@@ -646,14 +623,15 @@ for (i in 1:length(common.defects)){
                            nc.percent = (tab$t[1,2]/1479)*100, 
                            p.chisq = tab$chisq$p.value,
                            p.fisher = tab$fisher.gt$p.value,
-                           similar.nc.codes = paste(code.plus.synonyms, collapse = ", "))    
+                           codes.used.to.dx = paste(code.plus.synonyms, collapse = ", "))    
   
   defect.freq <- rbind(defect.freq, new.defect)
   
-
-  
-
 }
 
-#' TODO: Bind in BPA names.
-#' TODO: Compute percentage of affected children in each state.
+defect.freq <- left_join(defect.freq, bpa.defects, by = c('bpa.code' = "BPA_number"))
+defect.freq <- defect.freq[, c(1,9,2:8)]
+
+write.xlsx(defect.freq, file = 'Z:/Jeremy/DS-ALL BD project/R outputs/ds.leuk.comorbid.defect.counts.by.state.xlsx', row.names = FALSE)
+
+rm(list = ls()); gc()
