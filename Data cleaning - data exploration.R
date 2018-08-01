@@ -396,7 +396,7 @@ rm(list = ls()); gc()
 
 # Are NDBPN major defects captured equally well across states? ------------
 
-require(dplyr)
+require(dplyr); require(gmodels)
 
 load('Z:/Jeremy/GOBACK/Datasets/goback.chrom.v20180711.rdata')
 
@@ -563,4 +563,15 @@ write.xlsx(defect.freq, file = 'Z:/Jeremy/DS-ALL BD project/R outputs/ds.leuk.or
 
 
 
+# Summary statistics pertaining to Karen's suggestions --------------------
 
+load('Z:/Jeremy/DS-ALL BD project/Datasets/ds.leuk.v20180723.rdata')
+
+#' At the same time Karen returned thoughts on the other luekemia diagnoses,
+#' she suggested stratifying analyses of AML by those who are 4 years of age or less 
+#' vs those who are more than 4 years of age.  Relationship to TMD is presumed to differ
+#' among these strata.
+#' Similarly, she suggested looking at AML cases <= 4 years with TMD vs without.
+tmp <- filter(ds.leuk, aml == 1)
+table(tmp$ds.leuk, floor(tmp$person.yrs))
+table(tmp$conganomalies.digestivesystem.other, tmp$transient.myeloproliferative.disorder, useNA = 'ifany')
