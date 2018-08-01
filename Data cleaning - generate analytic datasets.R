@@ -2,52 +2,50 @@
 
 #'-------------------------------------------------------------------------
 #'-------------------------------------------------------------------------
-#' 2018.07.10.
+#' 2018.08.01.
 #' 
-#' Updated from 2018.06.27.
+#' Updated from 2018.07.10.
 #' 
 #' Create and clean datasets for the analysis of cancer risk and survival
 #' as a function of co-occurring birth defects in children diagnosed with 
 #' Down syndrome.
 #' 
-#' I've verified that the existing number of total defects and binary 
-#' organ systems defects variables are suitable for this analysis.
+#' Continued discussion and exploration of the data has led to further
+#' revisions to our analytic strategy.
 #' 
-#' Several previously outstanding questions were answered through meetings
-#' with Philip and/or Karen.
-#' 1 We will include other leukemias in the analysis.  We will structure 
-#'   the leukemia variables such that we study "any leukemia" and then
-#'   pull out ALL and AML cases for more specific analyses.
-#' 2 For the (planned, eventual) analysis of specific defects, we will 
-#'   include defects that occur in 5% or more of the DS cases.  This is 
-#'   equivalent to a defect occuring in more than 462 kids with DS.
-#'   Because they are inherently of interest, we will also include:
-#'   Tetralogy of Fallot, ASD, VSD, AVSD, and PDA regardless of whether they
-#'   satisfy this criterion. 
-#' 3 We will include all DS cases as a single unit.  We will not consider
-#'   children with mosaicism or translocation karyotypes separately.
-#' 4 For the few NC children with invalid BPA codes (758.008 or 758.098),
-#'   we will do nothing different.  These children phenotypically resemble
-#'   the other DS cases in terms of comorbid birth defects and the finer
-#'   distinctions based on karyotype are not of interest to us in this 
-#'   analysis.
-#' 5 We will include Michigan children contingent on locating BD codes in 
-#'   MI cancer cases.  As of today, these children are not included in the 
-#'   data.
+#' 1. We will restric the analysis to DS ALL and non-DS ALL cases.  This 
+#'    was decided due to the thorny issue of the hepatomegaly association
+#'    among AML children, likely secondary to TMD that was not reported 
+#'    to/by the cancer registry.  
+#' 2. We will compare ALL risk according to the presence/absence of NBDPN
+#'    major birth defects.  We will compare burden of defects between 
+#'    states on a relative basis, by computing the state-specific median
+#'    number of birth defects among children with DS an no cancer, then 
+#'    dichotomizing children from that state based on whether they are 
+#'    above or below this figure.  This is done to skirt the problem of 
+#'    differential reporting of co-occurring defects across states.  The 
+#'    logic is that comparisons of the absolute number of defects will
+#'    be confounded by the differences in the propensity for these defects
+#'    to show up in the BD registries, but that comparisons children who have
+#'    "more" vs. "fewer" defects based on the typical number of defects 
+#'    in their state of birth will be less affected. In contrast to minor 
+#'    defects, we feel that the NBDPN-defined major birth defects are 
+#'    comparatively well captured by all registries involved in this project. 
+#' 
+#' This approach has the side effect of solving a few other issues: 
+#' 
+#' 1. Whether we consider TMD a cancer diagnosis or an exposure (previously 
+#' an unresolved TODO).
+#' 2. What sorts of leukemias should be in the non-DS cancer group for any 
+#' analysis involving these kids (now there will be none). 
 #'-------------------------------------------------------------------------
 #'-------------------------------------------------------------------------
 
-#' TODO: Consider whether it is appropriate that the reference group of 
-#'       non-DS kids only includes ALL and AML as opposed to any leukemias.
-#'       The DS kids include those diagnosed with any leukemia.
-#' TODO: Consider that the birth defects variables need revision.  Rather than comparing
-#'       DS cases with the index anomaly to DS cases with no co-occurring
-#'       anomalies, we should be comparing them to DS cases without the 
-#'       index anomaly, yes?
 #' TODO: Should the NA values for minordefect.total be replaced with zeroes?
 #' TODO: Clean MI birth defects codes and recalculate number of defects in this state.
 #'       Include only defects captured by ICD9 codes that map to something in the BPA 
 #'       system.  This should exclude the additional conditions MI collects data on.
+#' TODO: Fix craniosynostosis in Texas.
 
 
 
@@ -57,130 +55,70 @@ require(dplyr)
 
 load('Z:/Jeremy/GOBACK/Datasets/goback.v20180711.rdata')
 
-#' Extract DS kids and non-DS kids with ALL or AML.  Exclude AR children.
-ds.leuk <- filter(goback, down.syndrome == 1 | all == 1 | aml == 1)
-ds.leuk <- filter(ds.leuk, state != 'AR')
+#' Extract DS kids.  Exclude AR children.
+ds.leuk <- filter(goback, down.syndrome == 1 & state != 'AR')
 
-#' Exclude DS cases with non-leukemia cancers listed as the first primary.
-exclude.cancer1 <- filter(ds.leuk, down.syndrome == 1 & cancer == 1 & !(cancer1 %in% c('all','aml','leu.other')))
-
+#' Exclude DS kids with any cancer except ALL as the first primary.
+exclude.cancer1 <- filter(ds.leuk, cancer1 != 'all')
 ds.leuk <- filter(ds.leuk, !(studyid %in% exclude.cancer1$studyid))
 
-#' 289 of the remaining children are marked NA for Down syndrome.
-#' These children have a cancer diagnosis, do not have Down syndrome, and do have some other defect(s).
-#' For purposes of this analysis, these children should be coded 0 with respect to Down syndrome.
-ds.leuk$down.syndrome <- ifelse(is.na(ds.leuk$down.syndrome), 0, ds.leuk$down.syndrome)
-
-#' Compute a three-level factor variable grouping children into the categories described in point 1 in the Readme.
-ds.leuk$ds.leuk <- factor(ifelse(ds.leuk$down.syndrome == 0 & (ds.leuk$aml == 1 | ds.leuk$all == 1), 0,
-                                 ifelse(ds.leuk$down.syndrome == 1 & ds.leuk$leu.any == 0, 1,
-                                        ifelse(ds.leuk$down.syndrome == 1 & ds.leuk$leu.any == 1, 2, NA))),
-                          levels = c(0:2),
-                          labels = c('Non-DS ALL/AML', 'DS Non-Leukemia', 'DS Leukemia'))
-
 #'-------------------------------------------------------------------------
 #'-------------------------------------------------------------------------
-#' The organ system level birth defects dummy variables are valid for this 
-#' analysis.
+#' Compute the relevant birth defects variables.
 #' 
-#' The number of birth defects variable is as well, although we should 
-#' substract 1 to account for the fact that all kids have a DS diagnosis.
+#' 1. Replace NAs with 0s for major defects.
 #' 
-#' We will need to compute a variable for any co-occurring birth defect.
-#' This basically could be 1 if the value (defect.total - 1) > 0.
+#' 2. Compute state-specific median number of birth defects among DS kids
+#'    without cancer.  Within each state, dichotomize children based on 
+#'    whether they are above or below this number.
 #'-------------------------------------------------------------------------
 #'-------------------------------------------------------------------------
 
-#' Compute number of comorbid defects for DS kids.
-#' Results in negative number of birth defects for non-DS ALL/AML cases with no birth defects.
-ds.leuk$number.of.comorbid.defects <- ds.leuk$defect.total - 1
-ds.leuk$number.of.comorbid.defects <- ifelse(ds.leuk$number.of.comorbid.defects < 0, 0, ds.leuk$number.of.comorbid.defects)
-
-#' Compute dummy variable for any comorbid defect.
-ds.leuk$any.comorbid.defect <- ifelse(ds.leuk$number.of.comorbid.defects >= 1 & ds.leuk$ds.leuk != 'Non-DS ALL/AML', 1,
-                                      ifelse(ds.leuk$ds.leuk == 'Non-DS ALL/AML', NA, 0))
-
-#' Replace with NA's with 0's for unaffected children across all the organ system dummy variables.
-#' We will just be comparing children with or without a defect in that organ system regardless of their other defects.
-orgsys.vars <- c(22,30,35,38,61,65,68,76,83,94)
-
-for (i in orgsys.vars){
-  print(names(ds.leuk[i]))
-  print(table(ds.leuk[,i]))
+for (i in 22:94){
   ds.leuk[,i] <- ifelse(is.na(ds.leuk[,i]), 0, ds.leuk[,i])
-  print(table(ds.leuk[,i]))
 }
 
-#' There's an obvious overabundance of craniosynostosis diagnoses in TX.
-load('Z:/Jeremy/DS-ALL BD project/Datasets/Expanded datasets/ds.leuk.bd.codes.txnc.transpose.v20180711.rdata')
+#' Compute dichotomous variables for number of total, major, and minor defects.
+#' Note that because the median number of minor defects in MI and NC is 0, the variable is essentially
+#' "any minor defect" in those states.
+print(subset(aggregate(defect.total ~ state + all, data = ds.leuk, median), all == 0))
+ds.leuk$defect.total.high.or.low <-  ifelse(ds.leuk$state == "TX" & ds.leuk$defect.total > 10, 1,
+                                     ifelse(ds.leuk$state != 'TX' & ds.leuk$defect.total > 4, 1, 0))
 
-#' This is caused, I think, by considering kids with 'other specified skull and face bone anomalies' to have craniosynostosis.
-#' You can see that here.
-match <- grep('756.0', names(ds.leuk.bd.codes.txnc.transpose))
+print(subset(aggregate(minordefect.total ~ state + all, data = ds.leuk, median), all == 0))
+ds.leuk$defect.minor.high.or.low <-  ifelse(ds.leuk$state == "TX" & ds.leuk$minordefect.total > 5, 1,
+                                     ifelse(ds.leuk$state != 'TX' & ds.leuk$minordefect.total > 0, 1, 0))
 
-tmp <- select(ds.leuk.bd.codes.txnc.transpose, studyid, match)
-for (i in 2:41){
-  tmp[,i] <- ifelse(is.na(tmp[,i]), 0, tmp[,i])
-}
-tmp$has.code <- ifelse(rowSums(tmp[2:41]) >= 1, 1, 0)
+print(subset(aggregate(majordefect.total ~ state + all, data = ds.leuk, median), all == 0))
+ds.leuk$defect.major.high.or.low <-  ifelse(ds.leuk$state == "TX" & ds.leuk$majordefect.total > 4, 1,
+                                            ifelse(ds.leuk$state != 'TX' & ds.leuk$majordefect.total > 3, 1, 0))
 
-#' These are the known and presumed codes for craniosynostosis in TX and NC.
-#' There are technically no codes for craniosynostosis in MI: they all map to 756.0, congenital anomalies of the skull and face bones.
-cranio.codes <- c('756.000','756.005','756.006','756.010','756.020','756.030', # These are the valid BPA codes for craniosynostosis per the TX DHHS handbook.
-                  '756.008','756.011','756.012','756.013','756.014','756.018', '756.032','756.034' # These are the presumed synonymous codes sporadically recored in NC.
-)
-
-ds.leuk.bd.codes.txnc.transpose <- select(ds.leuk.bd.codes.txnc.transpose, studyid, cranio.codes)
-
-for (i in 2:15){
-  ds.leuk.bd.codes.txnc.transpose[,i] <- ifelse(is.na(ds.leuk.bd.codes.txnc.transpose[,i]), 0, ds.leuk.bd.codes.txnc.transpose[,i])
-}
-
-ds.leuk.bd.codes.txnc.transpose$has.code <- ifelse(rowSums(ds.leuk.bd.codes.txnc.transpose[2:15]) >= 1, 1, 0)
-ds.leuk.bd.codes.txnc.transpose <- filter(ds.leuk.bd.codes.txnc.transpose, has.code == 1)
-
-cranio.ids <- c(ds.leuk.bd.codes.txnc.transpose$studyid)
-
-ds.leuk$craniosynostosis <- ifelse(ds.leuk$studyid %in% cranio.ids, 1, 0)
-
-save(ds.leuk, file = 'Z:/Jeremy/DS-ALL BD project/Datasets/ds.leuk.v20180718.rdata')
+save(ds.leuk, file = 'Z:/Jeremy/DS-ALL BD project/Datasets/ds.leuk.v20180801.1.rdata')
 
 rm(list = ls()); gc()
 
 
 
-# Generate variables for any major defect in each organ sys ---------------
+# Compute organ system level dummy variables ------------------------------
 
 #'-------------------------------------------------------------------------
 #'-------------------------------------------------------------------------
-#' There are major differences in the rates at which minor defects are 
-#' reported by state, with states other than Texas appearing not to have 
-#' captured them to any appreciable extent.
+#' Compute the relevant birth defects variables.
 #' 
-#' With that in mind, the organ system level dummy variables need to be 
-#' revised.  We will compute variables for whether there is any MAJOR 
-#' defect in that organ system, with major defects defined according to the 
-#' NBDPN document in the data dictionaries directory.
+#' 3. Compute a set of organ system level dummy variables that take value
+#'    1 only if the child has one or more NBDPN-defined major birth defects
+#'    in that organ system and 0 otherwise.
+#' 
+#' There are a few prerequisites to computing these, such as repairing 
+#' craniosynostosis and computing defects for CPUV and cloacal exstrophy.
 #'-------------------------------------------------------------------------
 #'-------------------------------------------------------------------------
 
-require(gmodels)
-
-load('Z:/Jeremy/DS-ALL BD project/Datasets/ds.leuk.v20180718.rdata')
+load('Z:/Jeremy/DS-ALL BD project/Datasets/ds.leuk.v20180801.1.rdata')
 load('Z:/Jeremy/DS-ALL BD project/Datasets/Expanded datasets/ds.leuk.bd.codes.txnc.transpose.v20180711.rdata')
 load('Z:/Jeremy/DS-ALL BD project/Datasets/Expanded datasets/ds.leuk.bd.codes.mi.transpose.v20180712.rdata')
 
-#' Replace NAs with 0's for all structural birth defects among children without the index birth defect.
-for (i in 22:94){ds.leuk[,i] <- ifelse(is.na(ds.leuk[,i]), 0, ds.leuk[,i])}
-
-ds.leuk$cns.any.major.anomaly <- ifelse(rowSums(ds.leuk[c(23,24,26,28)]) >= 1, 1, 0)
-ds.leuk$eye.any.major.anomaly <- ifelse(rowSums(ds.leuk[31:32]) >= 1, 1, 0)
-ds.leuk$ear.any.major.anomaly <- ifelse(rowSums(ds.leuk[36]) >= 1, 1, 0)
-ds.leuk$cardiovascular.any.major.anomaly <- ifelse(rowSums(ds.leuk[c(49,55,43,48,40,52,46,47,51,56,41,44,42,57,54)]) >= 1, 1, 0)
-ds.leuk$orofacial.any.major.anomaly <- ifelse(rowSums(ds.leuk[c(62,65)]) >= 1, 1, 0)
-ds.leuk$gi.any.major.anomaly <- ifelse(rowSums(ds.leuk[c(73,69,70,74)]) >= 1, 1, 0)
-
-#' Must compute variable for congenital posterior urethral valves and cloacal exstrophy to proceed.
+#' Must compute variables for congenital posterior urethral valves and cloacal exstrophy to proceed.
 cpuv.ids.txnc <- filter(ds.leuk.bd.codes.txnc.transpose, `753.600` == 1 | `753.604` == 1 | `753.608` == 1 | `753.609` == 1)
 cpuv.ids.mi <- filter(ds.leuk.bd.codes.mi.transpose, `753.6` == 1)
 cpuv.ids <- c(cpuv.ids.txnc$studyid, cpuv.ids.mi$studyid)
@@ -192,14 +130,48 @@ cloaca.ids <- c(cloaca.ids.mi$studyid, cloaca.ids.txnc$studyid)
 ds.leuk$congenital.posterior.urethral.vales <- ifelse(ds.leuk$studyid %in% cpuv.ids, 1, 0)
 ds.leuk$cloacal.exstrophy <- ifelse(ds.leuk$studyid %in% cloaca.ids, 1, 0)
 
+#' There's an obvious overabundance of craniosynostosis diagnoses in TX.
+#' This is evident from reviewing the statewise counts of comorbid defects.
+#' These are the correct codes for craniosynostosis, including the additional NC versions.
+#' Fixing this problem is a prerequisite to computing the new organ system variable for musculoskeletal defects.
+cranio.codes <- c('756.000','756.005','756.006','756.010','756.020','756.030','756.011', '756.012', '756.013', 
+                  '756.014', '756.018', '756.032', '756.034', '756.008')
+
+ds.leuk.bd.codes.txnc.transpose <- select(ds.leuk.bd.codes.txnc.transpose, studyid, cranio.codes)
+
+for (i in 2:15){
+  ds.leuk.bd.codes.txnc.transpose[,i] <- ifelse(is.na(ds.leuk.bd.codes.txnc.transpose[,i]), 0, ds.leuk.bd.codes.txnc.transpose[,i])
+}
+
+ds.leuk.bd.codes.txnc.transpose$has.code <- ifelse(rowSums(ds.leuk.bd.codes.txnc.transpose[2:15]) >= 1, 1, 0)
+ds.leuk.bd.codes.txnc.transpose <- filter(ds.leuk.bd.codes.txnc.transpose, has.code == 1)
+
+ds.leuk$craniosynostosis <- ifelse(ds.leuk$studyid %in% ds.leuk.bd.codes.txnc.transpose$studyid, 1, 0)
+
+#' Compute organ system level variables for any major defect.
+#' These defects were chosen because they are the NBDPN reported birth defects.
+#' See the 'NBDPN major birth defects from population-based birht defects surveillance programs in the united states' 
+#' file in this project's data dictionaries directory.
+ds.leuk$cns.any.major.anomaly <- ifelse(rowSums(ds.leuk[c(23,24,26,28)]) >= 1, 1, 0)
+ds.leuk$eye.any.major.anomaly <- ifelse(rowSums(ds.leuk[31:32]) >= 1, 1, 0)
+ds.leuk$ear.any.major.anomaly <- ifelse(rowSums(ds.leuk[36]) >= 1, 1, 0)
+ds.leuk$cardiovascular.any.major.anomaly <- ifelse(rowSums(ds.leuk[c(49,55,43,48,40,52,46,47,51,56,41,44,42,57,54)]) >= 1, 1, 0)
+ds.leuk$orofacial.any.major.anomaly <- ifelse(rowSums(ds.leuk[c(63,66,67)]) >= 1, 1, 0)
+ds.leuk$gi.any.major.anomaly <- ifelse(rowSums(ds.leuk[c(73,69,70,74)]) >= 1, 1, 0)
 ds.leuk$genitourinary.any.major.anomaly <- ifelse(rowSums(ds.leuk[c(78,80,77,166,167)]) >= 1, 1, 0)
-ds.leuk$musculoskeletal.any.major.anomaly <- ifelse(rowSums(ds.leuk[c(84,87,88,90,91,92)] >= 1), 1, 0)
+ds.leuk$musculoskeletal.any.major.anomaly <- ifelse(rowSums(ds.leuk[c(84:86,87,88,90:92)] >= 1), 1, 0)
+ds.leuk$any.major.comorbid.anomaly <- ifelse(rowSums(ds.leuk[162:169]) >= 1, 1, 0)
 
-ds.leuk <- select(ds.leuk, -cloacal.exstrophy, -congenital.posterior.urethral.vales, -any.comorbid.defect)
+#' There are lots of columns kicking around that I don't see myself using.
+#' The old organ system level variables, the chromosomal conditions other than DS 
+#' and the cancer variables other than ALL come to mind.
+cols <- c(which(grepl('conganomalies.', names(ds.leuk)) == TRUE), 65, 95:106, 113:151)
 
-ds.leuk$any.major.comorbid.anomaly <- ifelse(rowSums(ds.leuk[159:166]) >= 1, 1, 0)
+ds.leuk <- ds.leuk[, -cols]
 
-save(ds.leuk, file = 'Z:/Jeremy/DS-ALL BD project/Datasets/ds.leuk.v20180718.2.rdata')
+save(ds.leuk, file = 'Z:/Jeremy/DS-ALL BD project/Datasets/ds.leuk.v20180801.2.rdata')
+
+rm(list = ls()); gc()
 
 
 
@@ -211,19 +183,16 @@ require(dplyr)
 rm(list = ls())
 
 #' As of now, only TX and NC children in the ds.leuk dataset.
-load('Z:/Jeremy/DS-ALL BD project/Datasets/ds.leuk.v20180710.rdata')
+load('Z:/Jeremy/DS-ALL BD project/Datasets/ds.leuk.v20180801.2.rdata')
 load("Z:/Jeremy/GOBACK/Datasets/Expanded datasets/cancer.codes.v20180227.1.rdata")
 load("Z:/Jeremy/GOBACK/Datasets/Expanded datasets/bd.codes.txnc.transpose.v20180614.rdata")
 load("Z:/Jeremy/GOBACK/Datasets/Expanded datasets/bd.codes.txnc.v20180606.rdata")
 
 data.frames.names <- paste0('ds.leuk.',ls()[1:3])
 
-data.frames <- list(#bd.codes.mi, 
-                    #bd.codes.mi.transpose, 
-                    bd.codes.txnc, 
+data.frames <- list(bd.codes.txnc, 
                     bd.codes.txnc.transpose, 
                     cancer.codes)
-
 names(data.frames) <- data.frames.names
 
 #' Today's teachable moment: if you want to supply the name of the object to be saved as a character vector, 
@@ -241,7 +210,7 @@ for (i in 1:length(data.frames)){
   
   assign(data.frames.names[i],tmp)
   
-  path <- paste0('Z:/Jeremy/DS-ALL BD project/Datasets/Expanded datasets/',data.frames.names[i],'.v20180711.rdata')
+  path <- paste0('Z:/Jeremy/DS-ALL BD project/Datasets/Expanded datasets/',data.frames.names[i],'.v20180801.rdata')
   
   save(list = data.frames.names[i], file = path)
   
@@ -253,19 +222,21 @@ rm(list = ls()); gc()
 
 # Generate birth defects codes data frames: MI ----------------------------
 
-require(readstata13); require(dplyr)
+require(dplyr)
 
-load('Z:/Jeremy/DS-ALL BD project/Datasets/ds.leuk.v20180712.rdata')
+load('Z:/Jeremy/DS-ALL BD project/Datasets/ds.leuk.v20180801.2.rdata')
 load('Z:/Jeremy/GOBACK/Datasets/Expanded datasets/bd.codes.mi.v20180712.rdata')
 load('Z:/Jeremy/GOBACK/Datasets/Expanded datasets/bd.codes.mi.transpose.v20180712.rdata')
 
 ds.leuk <- filter(ds.leuk, state == 'MI')
-ds.leuk <- c(ds.leuk$studyid)
 
-#' Results in 3302 of 3307 rows returned.
-ds.leuk.bd.codes.mi <- filter(bd.codes.mi, studyid %in% ds.leuk)
-ds.leuk.bd.codes.mi.transpose <- filter(bd.codes.mi.transpose, studyid %in% ds.leuk)
+#' Results in 3102 of 3102 rows returned.
+ds.leuk.bd.codes.mi <- filter(bd.codes.mi, studyid %in% ds.leuk$studyid)
+ds.leuk.bd.codes.mi.transpose <- filter(bd.codes.mi.transpose, studyid %in% ds.leuk$studyid)
 
-save(ds.leuk.bd.codes.mi, file = 'Z:/Jeremy/DS-ALL BD project/Datasets/Expanded datasets/ds.leuk.bd.codes.mi.v20180712.rdata')
-save(ds.leuk.bd.codes.mi.transpose, file = 'Z:/Jeremy/DS-ALL BD project/Datasets/Expanded datasets/ds.leuk.bd.codes.mi.transpose.v20180712.rdata')
+save(ds.leuk.bd.codes.mi, file = 'Z:/Jeremy/DS-ALL BD project/Datasets/Expanded datasets/ds.leuk.bd.codes.mi.v20180801.rdata')
+save(ds.leuk.bd.codes.mi.transpose, file = 'Z:/Jeremy/DS-ALL BD project/Datasets/Expanded datasets/ds.leuk.bd.codes.mi.transpose.v20180801.rdata')
+
+rm(list = ls()); gc()
+
 
